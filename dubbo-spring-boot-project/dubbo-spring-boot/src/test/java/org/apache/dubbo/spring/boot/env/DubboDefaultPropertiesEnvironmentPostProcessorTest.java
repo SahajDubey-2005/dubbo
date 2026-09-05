@@ -16,7 +16,9 @@
  */
 package org.apache.dubbo.spring.boot.env;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
@@ -26,6 +28,7 @@ import org.springframework.core.env.MutablePropertySources;
 import org.springframework.core.env.PropertySource;
 import org.springframework.mock.env.MockEnvironment;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
@@ -95,5 +98,46 @@ class DubboDefaultPropertiesEnvironmentPostProcessorTest {
         instance.postProcessEnvironment(environment, springApplication);
         assertEquals("false", environment.getProperty("dubbo.config.multiple"));
         assertEquals("false", environment.getProperty("dubbo.application.qos-enable"));
+
+        // Case 6 : Test virtual thread property when spring.threads.virtual.enabled=true
+        environment = new MockEnvironment();
+        propertySources = environment.getPropertySources();
+        propertySources.addLast(new MapPropertySource("defaultProperties", new HashMap<String, Object>()));
+        environment.setProperty("spring.threads.virtual.enabled", "true");
+        instance.postProcessEnvironment(environment, springApplication);
+        defaultPropertySource = propertySources.get("defaultProperties");
+        assertNotNull(defaultPropertySource);
+        assertEquals("virtual", defaultPropertySource.getProperty("dubbo.protocol.threadpool"));
+    }
+
+    /** #16268: addOrReplace must not fail when "defaultProperties" is backed by an immutable map. */
+    @Test
+    void testPostProcessEnvironmentOnImmutableDefaultProperties() {
+        MockEnvironment environment = new MockEnvironment();
+        MutablePropertySources propertySources = environment.getPropertySources();
+        propertySources.addLast(
+                new MapPropertySource("defaultProperties", Collections.unmodifiableMap(new HashMap<String, Object>())));
+
+        instance.postProcessEnvironment(environment, springApplication);
+
+        PropertySource<?> defaultPropertySource = propertySources.get("defaultProperties");
+        assertNotNull(defaultPropertySource);
+        assertEquals("true", defaultPropertySource.getProperty("dubbo.config.multiple"));
+    }
+
+    /** #16268: on an immutable "defaultProperties", Dubbo's default must not override an existing key. */
+    @Test
+    void testImmutableDefaultPropertiesDoesNotOverrideExistingKey() {
+        MockEnvironment environment = new MockEnvironment();
+        MutablePropertySources propertySources = environment.getPropertySources();
+        Map<String, Object> existing = new HashMap<>();
+        existing.put("dubbo.config.multiple", "false");
+        propertySources.addLast(new MapPropertySource("defaultProperties", Collections.unmodifiableMap(existing)));
+
+        assertDoesNotThrow(() -> instance.postProcessEnvironment(environment, springApplication));
+
+        PropertySource<?> defaultPropertySource = propertySources.get("defaultProperties");
+        assertNotNull(defaultPropertySource);
+        assertEquals("false", defaultPropertySource.getProperty("dubbo.config.multiple"));
     }
 }

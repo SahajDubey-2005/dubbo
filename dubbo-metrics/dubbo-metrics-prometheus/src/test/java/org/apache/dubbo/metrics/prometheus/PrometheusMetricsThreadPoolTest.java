@@ -100,11 +100,6 @@ public class PrometheusMetricsThreadPoolTest {
         PrometheusMetricsReporter reporter = new PrometheusMetricsReporter(metricsConfig.toUrl(), applicationModel);
         reporter.init();
         exportHttpServer(reporter, port);
-        try {
-            Thread.sleep(5000);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
         if (metricsConfig.getEnableThreadpool()) {
             metricsCollector.registryDefaultSample();
         }
@@ -129,14 +124,14 @@ public class PrometheusMetricsThreadPoolTest {
             prometheusExporterHttpServer = HttpServer.create(new InetSocketAddress(port), 0);
             prometheusExporterHttpServer.createContext("/metrics", httpExchange -> {
                 reporter.resetIfSamplesChanged();
-                String response = reporter.getPrometheusRegistry().scrape();
+                String response = reporter.getResponse();
                 httpExchange.sendResponseHeaders(200, response.getBytes().length);
                 try (OutputStream os = httpExchange.getResponseBody()) {
                     os.write(response.getBytes());
                 }
             });
-            Thread httpServerThread = new Thread(prometheusExporterHttpServer::start);
-            httpServerThread.start();
+            // start ServerImpl dispatcher thread.
+            prometheusExporterHttpServer.start();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

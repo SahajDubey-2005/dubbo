@@ -55,6 +55,14 @@ public class DubboDefaultPropertiesEnvironmentPostProcessor implements Environme
     public static final String ALLOW_BEAN_DEFINITION_OVERRIDING_PROPERTY =
             "spring.main.allow-bean-definition-overriding";
 
+    public static final String DUBBO_THREAD_POOL_PROPERTY = "dubbo.protocol.threadpool";
+
+    public static final String VIRTUAL_THREAD = "virtual";
+
+    public static final String SPRING_THREAD_POOL_PROPERTY = "spring.threads.virtual.enabled";
+
+    private static final String ENABLED_VALUE = "true";
+
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
         MutablePropertySources propertySources = environment.getPropertySources();
@@ -73,7 +81,15 @@ public class DubboDefaultPropertiesEnvironmentPostProcessor implements Environme
         Map<String, Object> defaultProperties = new HashMap<>();
         setDubboApplicationNameProperty(environment, defaultProperties);
         setDubboConfigMultipleProperty(defaultProperties);
+        setDubboVirtualThreadsProperty(environment, defaultProperties);
         return defaultProperties;
+    }
+
+    private void setDubboVirtualThreadsProperty(Environment environment, Map<String, Object> defaultProperties) {
+        String virtualEnabled = environment.getProperty(SPRING_THREAD_POOL_PROPERTY);
+        if (ENABLED_VALUE.equals(virtualEnabled)) {
+            defaultProperties.put(DUBBO_THREAD_POOL_PROPERTY, VIRTUAL_THREAD);
+        }
     }
 
     private void setDubboApplicationNameProperty(Environment environment, Map<String, Object> defaultProperties) {
@@ -111,13 +127,17 @@ public class DubboDefaultPropertiesEnvironmentPostProcessor implements Environme
         if (propertySources.contains(PROPERTY_SOURCE_NAME)) {
             PropertySource<?> source = propertySources.get(PROPERTY_SOURCE_NAME);
             if (source instanceof MapPropertySource) {
-                target = (MapPropertySource) source;
+                // The existing backing map may be immutable, so copy into a mutable map and replace the
+                // source instead of mutating it in place. See dubbo#16268.
+                Map<String, Object> merged = new HashMap<>(((MapPropertySource) source).getSource());
                 for (Map.Entry<String, Object> entry : map.entrySet()) {
                     String key = entry.getKey();
-                    if (!target.containsProperty(key)) {
-                        target.getSource().put(key, entry.getValue());
+                    if (!merged.containsKey(key)) {
+                        merged.put(key, entry.getValue());
                     }
                 }
+                target = new MapPropertySource(PROPERTY_SOURCE_NAME, merged);
+                propertySources.replace(PROPERTY_SOURCE_NAME, target);
             }
         }
         if (target == null) {
